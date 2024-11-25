@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
 
 // libxml2 headers
 #include <libxml/xmlmemory.h>
@@ -22,11 +24,28 @@ static const char *const TYPE[] = { "rar", "7z", "zip", "" };
 // File Types
 static const char *const MIME[] = { "application/x-rar;", "application/x-7z-compressed;", "application/zip;", "" };
 
-// Commnds for each file type
-static const char *const CMD[] = { "unrar t -y -p%s %s 2>&1", "7z t -y -p%s %s 2>&1", "unzip -P%s -t %s 2>&1", "" };
-
 // Max password length
 #define PWD_LEN 100
+
+typedef void (*CMD_exec_t)(const char password[PWD_LEN + 1], const char *filename);
+static void CMD_exec_unrar_7z(const char *prog, const char password[PWD_LEN + 1], const char *filename) {
+    char parg[2 + PWD_LEN + 1];
+    strcpy(parg, "-p");
+    strcpy(parg + 2, password);
+    execlp(prog, prog, "t", "-y", parg, filename, (char *)NULL);
+}
+static void CMD_exec_unrar(const char password[PWD_LEN + 1], const char *filename) {
+    CMD_exec_unrar_7z("unrar", password, filename);
+}
+static void CMD_exec_7z(const char password[PWD_LEN + 1], const char *filename) {
+    CMD_exec_unrar_7z("7z", password, filename);
+}
+static void CMD_exec_unzip(const char password[PWD_LEN + 1], const char *filename) {
+    execlp("unzip", "unzip", "-P", password, "-t", filename, (char *)NULL);
+}
+
+// Commnds for each file type
+static const CMD_exec_t CMD[] = { CMD_exec_unrar, CMD_exec_7z, CMD_exec_unzip, NULL };
 
 char *getfirstpassword();
 void crack_start(unsigned int threads);
@@ -44,7 +63,7 @@ char *statname;	//status xml file name filename + ".xml"
 xmlDocPtr status;
 int finished = 0;
 xmlMutexPtr finishedMutex;
-const char *finalcmd; //this depending on arhive file type, it's a command to test file with password
+CMD_exec_t finalcmd; //this depending on arhive file type, it's a command to test file with password
 
 char *getfirstpassword() {
     static char ret[2];
@@ -226,17 +245,19 @@ void *crack_thread() {
     char *current;
     char *ret = NULL;
     size_t retlen = 0;
-    char *cmd;
     FILE *Pipe;
+    int fds[2];
     while (1) {
         current = nextpass();
-        if (asprintf(&cmd, finalcmd, current, filename) == -1) {
-            perror("ERROR");
-            free(current);
-            break;
+        (void) -pipe2(fds, O_CLOEXEC);
+        if (!vfork()) {
+            dup2(fds[1], 1);
+            dup2(fds[1], 2);
+            finalcmd(current, filename);
+            _exit(127);
         }
-        Pipe = popen(cmd, "r");
-        free(cmd);
+        close(fds[1]);
+        Pipe = fdopen(fds[0], "re");
         while (getline(&ret, &retlen, Pipe) != -1) {
             if (strcasestr(ret, "ok") != NULL) {
                 strcpy(password_good, current);
@@ -249,7 +270,8 @@ void *crack_thread() {
             }
         }
 
-        pclose(Pipe);
+        fclose(Pipe);
+
         xmlMutexLock(finishedMutex);
         counter++;
 
@@ -267,6 +289,8 @@ void *crack_thread() {
 void crack_start(unsigned int threads) {
     pthread_t th[13];
     unsigned int i;
+
+    signal(SIGCHLD, SIG_IGN);
 
     for (i = 0; i < threads; i++) {
         (void) pthread_create(&th[i], NULL, crack_thread, NULL);
@@ -332,7 +356,7 @@ void init(int argc, char **argv) {
 
                     if (archive_type < 0) {
                         printf("WARNING: invalid parameter --type %s!\n", argv[i]);
-                        finalcmd = "";
+                        finalcmd = NULL;
                     }
                 } else {
                     printf("ERROR: missing parameter for option: --type!\n");
