@@ -210,14 +210,12 @@ void nextpass2(char *p, unsigned int n) {
     }
 }
 
-char *nextpass() {
+void nextpass(char ok[static PWD_LEN+1]) {
     //IMPORTANT: the returned string must be freed
-    char *ok = malloc(sizeof(char)*(PWD_LEN+1));
     xmlMutexLock(pwdMutex);
     strcpy(ok, password);
     nextpass2((char*) &password, curr_len - 1);
     xmlMutexUnlock(pwdMutex);
-    return ok;
 }
 
 void *status_thread() {
@@ -242,13 +240,13 @@ void *status_thread() {
 }
 
 void *crack_thread() {
-    char *current;
+    char current[PWD_LEN+1];
     char *ret = NULL;
     size_t retlen = 0;
     FILE *Pipe;
     int fds[2];
     while (1) {
-        current = nextpass();
+        nextpass(current);
         (void) -pipe2(fds, O_CLOEXEC);
         if (!vfork()) {
             dup2(fds[1], 1);
@@ -281,7 +279,6 @@ void *crack_thread() {
         }
 
         xmlMutexUnlock(finishedMutex);
-        free(current);
     }
     free(ret);
 }
