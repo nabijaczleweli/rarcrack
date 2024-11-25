@@ -237,6 +237,7 @@ void *status_thread() {
         xmlMutexUnlock(pwdMutex);
         savestatus();	//FIXME: this is wrong, when probing current password(s) is(are) not finished yet, and the program is exiting
     }
+    return 0;
 }
 
 void *crack_thread() {
@@ -281,6 +282,7 @@ void *crack_thread() {
         xmlMutexUnlock(finishedMutex);
     }
     free(ret);
+    return 0;
 }
 
 void crack_start(unsigned int threads) {
