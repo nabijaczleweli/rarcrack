@@ -218,28 +218,6 @@ void nextpass(char ok[static PWD_LEN+1]) {
     xmlMutexUnlock(pwdMutex);
 }
 
-void *status_thread() {
-    int pwds;
-    const short status_sleep = 3;
-    while(1) {
-        sleep(status_sleep);
-        xmlMutexLock(finishedMutex);
-        pwds = counter / status_sleep;
-        counter = 0;
-
-        if (finished != 0) {
-            break;
-        }
-
-        xmlMutexUnlock(finishedMutex);
-        xmlMutexLock(pwdMutex);
-        printf("Probing: '%s' [%d pwds/sec]\n", password, pwds);
-        xmlMutexUnlock(pwdMutex);
-        savestatus();	//FIXME: this is wrong, when probing current password(s) is(are) not finished yet, and the program is exiting
-    }
-    return 0;
-}
-
 void *crack_thread() {
     char current[PWD_LEN+1];
     char *ret = NULL;
@@ -286,7 +264,7 @@ void *crack_thread() {
 }
 
 void crack_start(unsigned int threads) {
-    pthread_t th[13];
+    pthread_t *th = calloc(threads, sizeof(*th));
     unsigned int i;
 
     signal(SIGCHLD, SIG_IGN);
@@ -295,13 +273,27 @@ void crack_start(unsigned int threads) {
         (void) pthread_create(&th[i], NULL, crack_thread, NULL);
     }
 
-    (void) pthread_create(&th[12], NULL, status_thread, NULL);
+    const short status_sleep = 3;
+    while(1) {
+        sleep(status_sleep);
+        xmlMutexLock(finishedMutex);
+        int pwds = counter / status_sleep;
+        counter = 0;
+
+        if (finished != 0) {
+            break;
+        }
+
+        xmlMutexUnlock(finishedMutex);
+        xmlMutexLock(pwdMutex);
+        printf("Probing: '%s' [%d pwds/sec]\n", password, pwds);
+        xmlMutexUnlock(pwdMutex);
+        savestatus();   //FIXME: this is wrong, when probing current password(s) is(are) not finished yet, and the program is exiting
+    }
 
     for (i = 0; i < threads; i++) {
         (void) pthread_join(th[i], NULL);
     }
-
-    (void) pthread_join(th[12], NULL);
 }
 
 void init(int argc, char **argv) {
@@ -325,7 +317,7 @@ void init(int argc, char **argv) {
                 printf("         --type: you can specify the archive program, this needed when\n");
                 printf("                 the program couldn't detect the proper file type\n");
                 printf("         --threads: you can specify how many threads\n");
-                printf("                    will be run, maximum 12 (default: 2)\n\n");
+                printf("                    will be run (default: 1)\n\n");
                 printf("Info:    This program supports only RAR, ZIP and 7Z encrypted archives.\n");
                 printf("         RarCrack! usually detects the archive type.\n\n");
                 help = 1;
@@ -334,10 +326,6 @@ void init(int argc, char **argv) {
                 if ((i + 1) < argc) {
                     sscanf(argv[++i], "%d", &threads);
                     if (threads < 1) threads = 1;
-                    if (threads > 12) {
-                        printf("INFO: number of threads adjusted to 12\n");
-                        threads = 12;
-                    }
                 } else {
                     printf("ERROR: missing parameter for option: --threads!\n");
                     help = 1;
