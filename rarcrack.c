@@ -13,17 +13,17 @@
 #include <libxml/threads.h>
 
 // Default char list
-char default_ABC[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static const char default_ABC[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // File extensions
 // "" is the end of the list
-const char *TYPE[] = { "rar", "7z", "zip", "" };
+static const char *const TYPE[] = { "rar", "7z", "zip", "" };
 
 // File Types
-const char *MIME[] = { "application/x-rar;", "application/x-7z-compressed;", "application/zip;", "" };
+static const char *const MIME[] = { "application/x-rar;", "application/x-7z-compressed;", "application/zip;", "" };
 
 // Commnds for each file type
-const char *CMD[] = { "unrar t -y -p%s %s 2>&1", "7z t -y -p%s %s 2>&1", "unzip -P%s -t %s 2>&1", "" };
+static const char *const CMD[] = { "unrar t -y -p%s %s 2>&1", "7z t -y -p%s %s 2>&1", "unzip -P%s -t %s 2>&1", "" };
 
 // Max password length
 #define PWD_LEN 100
@@ -31,7 +31,7 @@ const char *CMD[] = { "unrar t -y -p%s %s 2>&1", "7z t -y -p%s %s 2>&1", "unzip 
 char *getfirstpassword();
 void crack_start(unsigned int threads);
 
-char* ABC = (char*) &default_ABC;
+const char* ABC = default_ABC;
 int ABCLEN;
 
 char password[PWD_LEN+1] = {'\0','\0'}; //this contains the actual password
@@ -410,19 +410,4 @@ int main(int argc, char **argv) {
     printf("RarCrack! 0.2 by David Zoltan Kedves (kedazo@gmail.com)\n\n");
 
     init(argc,argv);
-
-    if (ABC != (char*) &default_ABC) {
-        xmlFree(ABC);
-    }
-
-    if (status) {
-        xmlFreeDoc(status);
-    }
-
-    // Free memory
-    xmlFreeMutex(pwdMutex);
-    xmlFreeMutex(finishedMutex);
-
-    // 0
-    return EXIT_SUCCESS;
 }
