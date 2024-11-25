@@ -15,9 +15,6 @@
 // Default char list
 char default_ABC[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-// Command checks the type of file
-const char CMD_DETECT[] = "file -i -b %s";
-
 // File extensions
 // "" is the end of the list
 const char *TYPE[] = { "rar", "7z", "zip", "" };
@@ -355,24 +352,16 @@ void init(int argc, char **argv) {
         perror("ERROR");
         return;
     }
-    totest = fopen(filename,"r");
-    if (totest == NULL) {
+    if (!freopen(filename, "r", stdin)) {
         printf("ERROR: The specified file (%s) is not exists or \n", filename);
         printf("       you don't have a right permissions!\n");
         return;
-    } else {
-        fclose(totest);
     }
 
     if (!finalcmd) {
         //when we specify the file type, the programm will skip the test
-        char mime[50], *testcmd;
-        if (asprintf(&testcmd, CMD_DETECT, filename) == -1) {
-            perror("ERROR");
-            return;
-        }
-        totest = popen(testcmd,"r");
-        free(testcmd);
+        char mime[50];
+        totest = popen("file -i -b -","r");
         if (fscanf(totest,"%49s",mime) != 1) {
             mime[0] = '\0';
         }
