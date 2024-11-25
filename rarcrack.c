@@ -42,12 +42,12 @@ char password_good[PWD_LEN+1] = {'\0', '\0'};  //this changed only once, when we
 unsigned int curr_len = 1; //current password length
 long counter = 0;	//this couning probed passwords
 xmlMutexPtr pwdMutex;	//mutex for password char array
-char filename[255];	//the archive file name
-char statname[259];	//status xml file name filename + ".xml"
+const char *filename;	//the archive file name
+char *statname;	//status xml file name filename + ".xml"
 xmlDocPtr status;
 int finished = 0;
 xmlMutexPtr finishedMutex;
-char finalcmd[300] = {'\0', '\0'}; //this depending on arhive file type, it's a command to test file with password
+const char *finalcmd; //this depending on arhive file type, it's a command to test file with password
 
 char *getfirstpassword() {
     static char ret[2];
@@ -227,15 +227,20 @@ void *status_thread() {
 
 void *crack_thread() {
     char *current;
-    char ret[200];
-    char cmd[400];
+    char *ret = NULL;
+    size_t retlen = 0;
+    char *cmd;
     FILE *Pipe;
     while (1) {
         current = nextpass();
-        sprintf((char*)&cmd, finalcmd, current, filename);
+        if (asprintf(&cmd, finalcmd, current, filename) == -1) {
+            perror("ERROR");
+            free(current);
+            break;
+        }
         Pipe = popen(cmd, "r");
-        while (! feof(Pipe)) {
-            fgets((char*)&ret, 200, Pipe);
+        free(cmd);
+        while (getline(&ret, &retlen, Pipe) != -1) {
             if (strcasestr(ret, "ok") != NULL) {
                 strcpy(password_good, current);
                 xmlMutexLock(finishedMutex);
@@ -259,6 +264,7 @@ void *crack_thread() {
         xmlMutexUnlock(finishedMutex);
         free(current);
     }
+    free(ret);
 }
 
 void crack_start(unsigned int threads) {
@@ -284,7 +290,6 @@ void init(int argc, char **argv) {
     int threads = 1;
     int archive_type = -1;
     FILE* totest;
-    char test[300];
     xmlInitThreads();
     pwdMutex = xmlNewMutex();
     finishedMutex = xmlNewMutex();
@@ -319,10 +324,10 @@ void init(int argc, char **argv) {
                 }
             } else if (strcmp(argv[i],"--type") == 0) {
                 if ((i + 1) < argc) {
-                    sscanf(argv[++i], "%s", test);
+                    const char * tp = argv[++i];
                     for (j = 0; strcmp(TYPE[j], "") != 0; j++) {
-                        if (strcmp(TYPE[j], test) == 0) {
-                            strcpy(finalcmd, CMD[j]);
+                        if (strcmp(TYPE[j], tp) == 0) {
+                            finalcmd = CMD[j];
                             archive_type = j;
                             break;
                         }
@@ -330,14 +335,14 @@ void init(int argc, char **argv) {
 
                     if (archive_type < 0) {
                         printf("WARNING: invalid parameter --type %s!\n", argv[i]);
-                        finalcmd[0] = '\0';
+                        finalcmd = "";
                     }
                 } else {
                     printf("ERROR: missing parameter for option: --type!\n");
                     help = 1;
                 }
             } else {
-                strcpy((char*)&filename, argv[i]);
+                filename = argv[i];
             }
         }
     }
@@ -346,7 +351,10 @@ void init(int argc, char **argv) {
         return;
     }
 
-    sprintf((char*)&statname,"%s.xml",(char*)&filename);
+    if (asprintf(&statname,"%s.xml",filename) == -1) {
+        perror("ERROR");
+        return;
+    }
     totest = fopen(filename,"r");
     if (totest == NULL) {
         printf("ERROR: The specified file (%s) is not exists or \n", filename);
@@ -356,16 +364,23 @@ void init(int argc, char **argv) {
         fclose(totest);
     }
 
-    if (finalcmd[0] == '\0') {
+    if (!finalcmd) {
         //when we specify the file type, the programm will skip the test
-        sprintf((char*)&test, CMD_DETECT, filename);
-        totest = popen(test,"r");
-        fscanf(totest,"%s",(char*)&test);
+        char mime[50], *testcmd;
+        if (asprintf(&testcmd, CMD_DETECT, filename) == -1) {
+            perror("ERROR");
+            return;
+        }
+        totest = popen(testcmd,"r");
+        free(testcmd);
+        if (fscanf(totest,"%49s",mime) != 1) {
+            mime[0] = '\0';
+        }
         pclose(totest);
 
         for (i = 0; strcmp(MIME[i],"") != 0; i++) {
-            if (strcmp(MIME[i],test) == 0) {
-                strcpy(finalcmd,CMD[i]);
+            if (strcmp(MIME[i],mime) == 0) {
+                finalcmd = CMD[i];
                 archive_type = i;
                 break;
             }
@@ -380,7 +395,7 @@ void init(int argc, char **argv) {
         }
     }
 
-    if (finalcmd[0] == '\0') {
+    if (!finalcmd) {
         printf("ERROR: Couldn't detect archive type\n");
         return;
     }
